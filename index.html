@@ -1,0 +1,1422 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calculateur de Frais d'Entrée</title>
+<script src="assets/chart.min.js"></script>
+<script src="assets/jspdf.min.js"></script>
+<script src="assets/jspdf.autotable.min.js"></script>
+<style>
+  :root {
+    --primary: #035f93;
+    --primary-light: #0072a0;
+    --accent: #00aec2;
+    --accent-light: #02afc3;
+    --bg: #f5f7fa;
+    --surface: #ffffff;
+    --border: #dde2ea;
+    --text: #1a2535;
+    --text-muted: #6b7a8d;
+    --success: #2e7d52;
+    --danger: #c0392b;
+    --radius: 10px;
+    --shadow: 0 2px 12px rgba(3,95,147,0.10);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* HEADER */
+  header {
+    background: var(--primary);
+    color: white;
+    padding: 0 32px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  }
+  .header-left { display: flex; align-items: center; gap: 16px; }
+  #logo-area {
+    height: 40px;
+    width: 120px;
+    border: 2px dashed rgba(255,255,255,0.35);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    cursor: pointer;
+    overflow: hidden;
+    position: relative;
+  }
+  #logo-area img { max-height: 38px; max-width: 118px; object-fit: contain; }
+  #logo-input { display: none; }
+  header h1 { font-size: 1.15rem; font-weight: 600; letter-spacing: 0.02em; }
+
+  /* TABS */
+  nav {
+    background: var(--primary);
+    padding: 0 32px;
+    display: flex;
+    gap: 4px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+  }
+  nav button {
+    background: none;
+    border: none;
+    color: rgba(255,255,255,0.6);
+    padding: 12px 24px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s;
+  }
+  nav button.active { color: var(--accent-light); border-bottom-color: var(--accent-light); font-weight: 600; }
+  nav button:hover:not(.active) { color: rgba(255,255,255,0.85); }
+
+  /* LAYOUT */
+  main { padding: 28px 32px; max-width: 1200px; margin: 0 auto; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* CARDS */
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 24px;
+    border: 1px solid var(--border);
+  }
+  .card-title {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+  }
+
+  /* SIMULATOR LAYOUT */
+  .sim-grid {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  .sim-left { display: flex; flex-direction: column; gap: 16px; }
+
+  /* PRODUCT SELECTOR */
+  select, input[type="number"], input[type="text"] {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid var(--border);
+    border-radius: 7px;
+    font-size: 0.97rem;
+    color: var(--text);
+    background: var(--bg);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  select:focus, input:focus { border-color: var(--primary-light); }
+
+  /* SLIDER */
+  .slider-wrap { position: relative; }
+  input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 6px;
+    background: linear-gradient(to right, var(--primary) 0%, var(--primary) var(--val, 0%), var(--border) var(--val, 0%));
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+    margin: 8px 0;
+    border: none;
+    padding: 0;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--primary);
+    border: 3px solid white;
+    box-shadow: 0 1px 6px rgba(3,95,147,0.3);
+    cursor: grab;
+  }
+  .slider-limits { display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+
+  /* AMOUNT INPUT */
+  .amount-row { display: flex; gap: 8px; align-items: center; }
+  .amount-row input { flex: 1; font-size: 1.1rem; font-weight: 600; }
+  .currency { font-size: 1rem; color: var(--text-muted); font-weight: 500; white-space: nowrap; }
+
+  /* RESULT BOX */
+  .result-box {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+    color: white;
+    border-radius: var(--radius);
+    padding: 20px;
+    text-align: center;
+  }
+  .result-rate { font-size: 2.8rem; font-weight: 700; color: var(--accent-light); line-height: 1; }
+  .result-rate-label { font-size: 0.8rem; opacity: 0.7; margin-bottom: 4px; }
+  .result-divider { border: none; border-top: 1px solid rgba(255,255,255,0.2); margin: 14px 0; }
+  .result-amount { font-size: 1.6rem; font-weight: 700; }
+  .result-amount-label { font-size: 0.78rem; opacity: 0.7; }
+  .result-net { margin-top: 10px; font-size: 0.88rem; opacity: 0.75; }
+
+  /* CHART */
+  .chart-wrap { position: relative; height: 320px; }
+
+  /* PDF BUTTON */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 7px;
+    font-size: 0.92rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all 0.18s;
+  }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-light); }
+  .btn-accent { background: var(--accent); color: white; }
+  .btn-accent:hover { background: var(--accent-light); color: var(--primary); }
+  .btn-sm { padding: 6px 14px; font-size: 0.82rem; }
+  .btn-danger { background: none; color: var(--danger); border: 1.5px solid var(--danger); }
+  .btn-danger:hover { background: var(--danger); color: white; }
+  .btn-ghost { background: none; color: var(--primary); border: 1.5px solid var(--primary); }
+  .btn-ghost:hover { background: var(--primary); color: white; }
+
+  /* SETTINGS */
+  .settings-grid { display: grid; grid-template-columns: 300px 1fr; gap: 20px; align-items: start; }
+  .products-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+  .product-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-radius: 7px;
+    border: 1.5px solid var(--border);
+    cursor: pointer;
+    transition: all 0.18s;
+    background: var(--bg);
+  }
+  .product-item:hover, .product-item.selected {
+    border-color: var(--primary);
+    background: rgba(3,95,147,0.06);
+  }
+  .product-item.selected { font-weight: 600; }
+  .product-name { font-size: 0.93rem; }
+  .product-type-badge {
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .badge-independent { background: rgba(3,95,147,0.12); color: var(--primary); }
+  .badge-coefficient { background: rgba(200,164,74,0.18); color: #8a6800; }
+
+  /* SCHEDULE EDITOR */
+  .schedule-table { width: 100%; border-collapse: collapse; }
+  .schedule-table th {
+    text-align: left;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    padding: 8px 12px;
+    border-bottom: 2px solid var(--border);
+  }
+  .schedule-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  .schedule-table tr:last-child td { border-bottom: none; }
+  .schedule-table input[type="number"] {
+    padding: 6px 10px;
+    font-size: 0.9rem;
+    background: white;
+  }
+  .schedule-table .del-btn {
+    background: none;
+    border: none;
+    color: var(--danger);
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .schedule-table .del-btn:hover { background: rgba(192,57,43,0.1); }
+
+  /* FORM GROUPS */
+  .form-group { margin-bottom: 14px; }
+  .form-label { display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .form-row { display: flex; gap: 10px; align-items: flex-end; }
+  .form-row .form-group { flex: 1; margin-bottom: 0; }
+
+  /* COEFF INPUT */
+  .coeff-wrap { display: flex; align-items: center; gap: 10px; }
+  .coeff-wrap input { width: 100px; }
+  .coeff-preview { font-size: 0.85rem; color: var(--text-muted); }
+
+  /* ALERT */
+  .alert { padding: 10px 14px; border-radius: 7px; font-size: 0.88rem; margin-bottom: 12px; }
+  .alert-info { background: rgba(3,95,147,0.08); color: var(--primary); border: 1px solid rgba(3,95,147,0.18); }
+
+  /* SECTION TITLE */
+  .section-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--primary);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: space-between;
+  }
+
+  /* MODAL */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: white;
+    border-radius: 12px;
+    padding: 28px;
+    width: 440px;
+    max-width: 95vw;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.22);
+  }
+  .modal h3 { font-size: 1.1rem; font-weight: 700; color: var(--primary); margin-bottom: 18px; }
+  .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+  /* RESPONSIVE */
+  @media (max-width: 900px) {
+    .sim-grid, .settings-grid { grid-template-columns: 1fr; }
+    main { padding: 16px; }
+  }
+
+  /* SEPARATOR */
+  hr.sep { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+
+  .tag { font-size: 0.75rem; padding: 2px 8px; border-radius: 20px; background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); }
+  .flex-between { display: flex; justify-content: space-between; align-items: center; }
+
+  /* MULTI-SUPPORTS */
+  .multi-table { width: 100%; border-collapse: collapse; }
+  .multi-table th {
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--border);
+    white-space: nowrap;
+  }
+  .multi-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .multi-table tr:last-child td { border-bottom: none; }
+  .multi-table select, .multi-table input[type="number"] { padding: 8px 10px; font-size: 0.9rem; }
+  .multi-table .rate-cell { font-size: 1rem; font-weight: 700; color: var(--primary); text-align: right; }
+  .multi-table .fees-cell { font-size: 1rem; font-weight: 700; color: var(--accent); text-align: right; }
+  .multi-table .del-btn { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 1.1rem; padding: 4px 8px; border-radius: 4px; }
+  .multi-table .del-btn:hover { background: rgba(192,57,43,0.1); }
+  .multi-table tr:hover td { background: rgba(3,95,147,0.03); }
+
+  .multi-summary {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 20px;
+  }
+  .summary-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    text-align: center;
+    box-shadow: var(--shadow);
+  }
+  .summary-box.highlight { background: linear-gradient(135deg, var(--primary), var(--primary-light)); color: white; border-color: var(--primary); }
+  .summary-box.highlight .summary-label { color: rgba(255,255,255,0.7); }
+  .summary-value { font-size: 1.7rem; font-weight: 700; color: var(--primary); line-height: 1.1; }
+  .summary-box.highlight .summary-value { color: var(--accent-light); }
+  .summary-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 4px; }
+  .summary-net { font-size: 0.85rem; color: var(--text-muted); margin-top: 6px; }
+  .multi-table .pct-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 4px; min-width: 60px; }
+  .multi-table .pct-bar-fill { height: 4px; background: var(--accent); border-radius: 2px; transition: width 0.3s; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div id="logo-area" style="background:white;border:none;padding:3px 6px;">
+      <img id="logo-img" src="assets/logo.svg" alt="Logo" style="display:block;max-height:36px;max-width:160px;object-fit:contain;">
+    </div>
+    <h1>Calculateur de Frais d'Entrée</h1>
+  </div>
+
+</header>
+
+<nav>
+  <button class="active" onclick="showView('sim', this)">&#9654; Simulateur</button>
+  <button onclick="showView('multi', this)">&#9776; Multi-supports</button>
+  <button onclick="showView('settings', this)">&#9881; Paramètres</button>
+</nav>
+
+<main>
+  <!-- ===== SIMULATEUR ===== -->
+  <div class="view active" id="view-sim">
+    <div class="sim-grid">
+      <div class="sim-left">
+
+        <!-- Produit -->
+        <div class="card">
+          <div class="card-title">Produit</div>
+          <select id="sim-product" onchange="updateSim()"></select>
+        </div>
+
+        <!-- Montant -->
+        <div class="card">
+          <div class="card-title">Montant investi</div>
+          <div class="amount-row">
+            <input type="number" id="sim-amount" value="100000" min="0" oninput="onAmountInput()">
+            <span class="currency">€</span>
+          </div>
+          <div style="margin-top: 14px;">
+            <input type="range" id="sim-slider" min="0" max="1000000" step="1000" value="100000" oninput="onSliderInput()">
+            <div class="slider-limits">
+              <span id="slider-min-label">0 €</span>
+              <span id="slider-max-label">1 000 000 €</span>
+            </div>
+          </div>
+          <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-ghost btn-sm" onclick="setSliderRange(500000)">Max 500k</button>
+            <button class="btn btn-ghost btn-sm" onclick="setSliderRange(1000000)">Max 1M</button>
+            <button class="btn btn-ghost btn-sm" onclick="setSliderRange(2000000)">Max 2M</button>
+            <button class="btn btn-ghost btn-sm" onclick="setSliderRange(5000000)">Max 5M</button>
+          </div>
+        </div>
+
+        <!-- Résultat -->
+        <div class="result-box" id="result-box">
+          <div class="result-rate-label">Taux de frais appliqué</div>
+          <div class="result-rate" id="res-rate">—</div>
+          <hr class="result-divider">
+          <div class="result-amount-label">Frais d'entrée (€)</div>
+          <div class="result-amount" id="res-amount">—</div>
+          <div class="result-net" id="res-net"></div>
+        </div>
+
+        <!-- PDF -->
+        <button class="btn btn-accent" style="width:100%;justify-content:center;" onclick="exportPDF()">
+          &#128196; Exporter en PDF
+        </button>
+
+      </div>
+
+      <!-- Graphique -->
+      <div class="card">
+        <div class="card-title">Courbe des frais — <span id="chart-product-name">—</span></div>
+        <div class="chart-wrap">
+          <canvas id="fee-chart"></canvas>
+        </div>
+        <div style="margin-top: 14px;">
+          <table style="width:100%; border-collapse:collapse; font-size:0.85rem;" id="breakpoints-preview">
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MULTI-SUPPORTS ===== -->
+  <div class="view" id="view-multi">
+    <div class="card">
+      <div class="section-title">
+        <span>Répartition multi-supports</span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="addMultiLine()">+ Ajouter un support</button>
+          <button class="btn btn-accent btn-sm" onclick="exportMultiPDF()">&#128196; Exporter PDF</button>
+        </div>
+      </div>
+
+      <div style="overflow-x:auto;">
+        <table class="multi-table" id="multi-table">
+          <thead>
+            <tr>
+              <th style="width:220px;">Produit</th>
+              <th style="width:180px;">Montant investi (€)</th>
+              <th style="text-align:right;">Taux appliqué</th>
+              <th style="text-align:right;">Frais d'entrée</th>
+              <th style="text-align:right;width:90px;">% du total</th>
+              <th style="width:40px;"></th>
+            </tr>
+          </thead>
+          <tbody id="multi-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="multi-summary" id="multi-summary">
+        <div class="summary-box">
+          <div class="summary-label">Total investi</div>
+          <div class="summary-value" id="ms-total-amount">—</div>
+        </div>
+        <div class="summary-box highlight">
+          <div class="summary-label">Taux moyen pondéré</div>
+          <div class="summary-value" id="ms-avg-rate">—</div>
+          <div class="summary-net" id="ms-net">—</div>
+        </div>
+        <div class="summary-box">
+          <div class="summary-label">Total frais d'entrée</div>
+          <div class="summary-value" id="ms-total-fees">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== PARAMÈTRES ===== -->
+  <div class="view" id="view-settings">
+    <div class="settings-grid">
+
+      <!-- Liste produits -->
+      <div>
+        <div class="card">
+          <div class="section-title">
+            <span>Produits</span>
+            <button class="btn btn-primary btn-sm" onclick="openAddProduct()">+ Ajouter</button>
+          </div>
+          <div class="products-list" id="products-list"></div>
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+          <div class="card-title">Barème commun de référence</div>
+          <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:12px;">
+            Les produits de type « coefficient » appliquent ce barème multiplié par leur coefficient.
+          </p>
+          <div id="base-schedule-editor"></div>
+          <button class="btn btn-ghost btn-sm" style="margin-top:10px;" onclick="addBreakpoint('base')">+ Ajouter un palier</button>
+        </div>
+      </div>
+
+      <!-- Éditeur produit -->
+      <div class="card" id="product-editor">
+        <div class="section-title">Sélectionnez un produit à configurer</div>
+        <p style="color:var(--text-muted);font-size:0.9rem;">Cliquez sur un produit dans la liste pour modifier son barème.</p>
+      </div>
+
+    </div>
+  </div>
+</main>
+
+<!-- MODAL ajout produit -->
+<div class="modal-overlay" id="modal-add-product">
+  <div class="modal">
+    <h3>Nouveau produit</h3>
+    <div class="form-group">
+      <label class="form-label">Nom du produit</label>
+      <input type="text" id="new-product-name" placeholder="Ex. Fond EURO, SCPI...">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Type de barème</label>
+      <select id="new-product-type" onchange="toggleCoeffField()">
+        <option value="independent">Barème indépendant (paliers propres)</option>
+        <option value="coefficient">Barème commun × coefficient</option>
+      </select>
+    </div>
+    <div class="form-group" id="new-coeff-group" style="display:none;">
+      <label class="form-label">Coefficient (ex. 1.0 = 100% du barème commun)</label>
+      <input type="number" id="new-product-coeff" value="1.00" step="0.01" min="0">
+    </div>
+    <div class="alert alert-info" id="new-type-info">
+      Ce produit aura ses propres paliers de frais configurables indépendamment.
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modal-add-product')">Annuler</button>
+      <button class="btn btn-primary" onclick="confirmAddProduct()">Créer</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ==================== STATE ====================
+let state = {
+  logo: null,
+  baseSchedule: [
+    { min: 0, rate: 5.0 },
+    { min: 100000, rate: 4.0 },
+    { min: 200000, rate: 3.0 },
+    { min: 400000, rate: 2.5 },
+    { min: 700000, rate: 2.0 },
+    { min: 1000000, rate: 1.5 },
+  ],
+  products: [
+    {
+      id: 'p1', name: 'Fond EURO', type: 'independent',
+      schedule: [
+        { min: 0, rate: 2.0 },
+        { min: 1000000, rate: 2.0 },
+      ]
+    },
+    {
+      id: 'p2', name: 'SEI Agressive', type: 'independent',
+      schedule: [
+        { min: 0, rate: 4.75 },
+        { min: 1000000, rate: 4.75 },
+      ]
+    },
+    {
+      id: 'p3', name: 'SEI Growth', type: 'independent',
+      schedule: [
+        { min: 0, rate: 4.75 },
+        { min: 1000000, rate: 4.75 },
+      ]
+    },
+  ],
+  selectedProductId: 'p1',
+  sliderMax: 1000000,
+};
+
+// ==================== UTILS ====================
+function fmt(n) {
+  return new Intl.NumberFormat('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+}
+function fmtRate(r) { return r.toFixed(2).replace('.', ',') + ' %'; }
+function fmtEur(n) { return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n); }
+
+function getEffectiveSchedule(product) {
+  if (product.type === 'coefficient') {
+    return state.baseSchedule.map(bp => ({ min: bp.min, rate: bp.rate * (product.coeff ?? 1) }));
+  }
+  return product.schedule;
+}
+
+function computeRate(amount, schedule) {
+  const sorted = [...schedule].sort((a, b) => a.min - b.min);
+  if (!sorted.length) return 0;
+  if (amount <= sorted[0].min) return sorted[0].rate;
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const lo = sorted[i], hi = sorted[i + 1];
+    if (amount >= lo.min && amount < hi.min) {
+      // Linear interpolation
+      const t = (amount - lo.min) / (hi.min - lo.min);
+      return lo.rate + (hi.rate - lo.rate) * t;
+    }
+  }
+  return sorted[sorted.length - 1].rate;
+}
+
+function getProduct(id) { return state.products.find(p => p.id === id); }
+
+function uid() { return 'p' + Math.random().toString(36).substr(2, 9); }
+
+// ==================== VIEWS ====================
+function showView(v, btn) {
+  document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(el => el.classList.remove('active'));
+  document.getElementById('view-' + v).classList.add('active');
+  if (btn) btn.classList.add('active');
+  if (v === 'settings') renderSettings();
+  if (v === 'sim') updateSim();
+  if (v === 'multi') renderMultiTable();
+}
+
+// ==================== SIMULATOR ====================
+function populateProductSelect() {
+  const sel = document.getElementById('sim-product');
+  const current = sel.value;
+  sel.innerHTML = '';
+  state.products.forEach((p, i) => {
+    const o = document.createElement('option');
+    o.value = p.id;
+    o.textContent = p.name;
+    if (p.id === current || (!current && i === 0)) o.selected = true;
+    sel.appendChild(o);
+  });
+  if (!sel.value && state.products.length) sel.options[0].selected = true;
+}
+
+let feeChart = null;
+function updateSim() {
+  populateProductSelect();
+  const pid = document.getElementById('sim-product').value;
+  const amount = parseFloat(document.getElementById('sim-amount').value) || 0;
+  const product = getProduct(pid);
+  if (!product) return;
+
+  const schedule = getEffectiveSchedule(product);
+  const rate = computeRate(amount, schedule);
+  const fees = amount * rate / 100;
+  const net = amount - fees;
+
+  document.getElementById('res-rate').textContent = fmtRate(rate);
+  document.getElementById('res-amount').textContent = fmtEur(fees);
+  document.getElementById('res-net').textContent = 'Montant net investi : ' + fmtEur(net);
+  document.getElementById('chart-product-name').textContent = product.name;
+
+  updateSliderGradient();
+  drawChart(schedule, amount, rate);
+  drawBreakpointsPreview(schedule);
+}
+
+function onAmountInput() {
+  const val = parseFloat(document.getElementById('sim-amount').value) || 0;
+  const slider = document.getElementById('sim-slider');
+  slider.value = Math.min(val, parseInt(slider.max));
+  updateSim();
+}
+
+function onSliderInput() {
+  const val = document.getElementById('sim-slider').value;
+  document.getElementById('sim-amount').value = val;
+  updateSim();
+}
+
+function setSliderRange(max) {
+  const slider = document.getElementById('sim-slider');
+  slider.max = max;
+  state.sliderMax = max;
+  document.getElementById('slider-max-label').textContent = fmt(max) + ' €';
+  const amount = parseFloat(document.getElementById('sim-amount').value) || 0;
+  slider.value = Math.min(amount, max);
+  updateSim();
+}
+
+function updateSliderGradient() {
+  const slider = document.getElementById('sim-slider');
+  const min = parseFloat(slider.min), max = parseFloat(slider.max), val = parseFloat(slider.value);
+  const pct = max === min ? 0 : ((val - min) / (max - min)) * 100;
+  slider.style.setProperty('--val', pct + '%');
+}
+
+function drawChart(schedule, currentAmount, currentRate) {
+  const sorted = [...schedule].sort((a, b) => a.min - b.min);
+  const maxAmount = Math.max(state.sliderMax, sorted[sorted.length - 1]?.min * 1.3 || 1000000);
+  const points = 200;
+  const labels = [];
+  const data = [];
+  for (let i = 0; i <= points; i++) {
+    const amt = (i / points) * maxAmount;
+    labels.push(amt);
+    data.push(computeRate(amt, schedule));
+  }
+
+  const ctx = document.getElementById('fee-chart').getContext('2d');
+  if (feeChart) feeChart.destroy();
+  feeChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Taux de frais (%)',
+          data,
+          borderColor: '#035f93',
+          backgroundColor: 'rgba(3,95,147,0.08)',
+          borderWidth: 2.5,
+          pointRadius: 0,
+          fill: true,
+          tension: 0,
+        },
+        {
+          label: 'Position actuelle',
+          data: [{ x: currentAmount, y: currentRate }],
+          borderColor: '#00aec2',
+          backgroundColor: '#00aec2',
+          pointRadius: 8,
+          pointStyle: 'circle',
+          showLine: false,
+          type: 'scatter',
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 120 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              if (ctx.datasetIndex === 0) return fmtRate(ctx.parsed.y);
+              return `Taux : ${fmtRate(ctx.parsed.y)} | Montant : ${fmtEur(ctx.parsed.x)}`;
+            },
+            title: ctx => {
+              if (ctx[0]?.datasetIndex === 0) return fmtEur(ctx[0].parsed.x);
+              return '';
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          min: 0,
+          max: maxAmount,
+          ticks: {
+            callback: v => {
+              if (v >= 1000000) return (v / 1000000).toFixed(1).replace('.0', '') + 'M €';
+              if (v >= 1000) return (v / 1000).toFixed(0) + 'k €';
+              return v + ' €';
+            },
+            maxTicksLimit: 8,
+            font: { size: 11 }
+          },
+          grid: { color: 'rgba(0,0,0,0.06)' }
+        },
+        y: {
+          ticks: {
+            callback: v => v.toFixed(1) + ' %',
+            font: { size: 11 }
+          },
+          grid: { color: 'rgba(0,0,0,0.06)' }
+        }
+      }
+    }
+  });
+}
+
+function drawBreakpointsPreview(schedule) {
+  const sorted = [...schedule].sort((a, b) => a.min - b.min);
+  const table = document.getElementById('breakpoints-preview');
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th style="padding:6px 10px;text-align:left;font-size:0.75rem;color:var(--text-muted);border-bottom:1px solid var(--border);">Montant min</th>
+        <th style="padding:6px 10px;text-align:right;font-size:0.75rem;color:var(--text-muted);border-bottom:1px solid var(--border);">Taux</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${sorted.map((bp, i) => {
+        const next = sorted[i + 1];
+        return `<tr>
+          <td style="padding:5px 10px;font-size:0.83rem;">${fmt(bp.min)} €${next ? ' – ' + fmt(next.min - 1) + ' €' : ' et au-delà'}</td>
+          <td style="padding:5px 10px;font-size:0.83rem;text-align:right;">${next ? fmtRate(bp.rate) + ' → ' + fmtRate(next.rate) : fmtRate(bp.rate)}</td>
+        </tr>`;
+      }).join('')}
+    </tbody>`;
+}
+
+// ==================== SETTINGS ====================
+function renderSettings() {
+  renderProductList();
+  renderBaseSchedule();
+  if (state.selectedProductId) openProductEditor(state.selectedProductId);
+}
+
+function renderProductList() {
+  const list = document.getElementById('products-list');
+  list.innerHTML = '';
+  state.products.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'product-item' + (p.id === state.selectedProductId ? ' selected' : '');
+    div.onclick = () => { state.selectedProductId = p.id; renderProductList(); openProductEditor(p.id); };
+    div.innerHTML = `
+      <span class="product-name">${p.name}</span>
+      <span class="product-type-badge ${p.type === 'coefficient' ? 'badge-coefficient' : 'badge-independent'}">
+        ${p.type === 'coefficient' ? '×' + (p.coeff ?? 1).toFixed(2) : 'Indép.'}
+      </span>`;
+    list.appendChild(div);
+  });
+}
+
+function renderBaseSchedule() {
+  document.getElementById('base-schedule-editor').innerHTML = renderScheduleTable('base', state.baseSchedule);
+}
+
+function renderScheduleTable(context, schedule) {
+  const sorted = [...schedule].sort((a, b) => a.min - b.min);
+  return `<table class="schedule-table">
+    <thead>
+      <tr>
+        <th>Montant min (€)</th>
+        <th>Taux (%)</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      ${sorted.map((bp, i) => `
+        <tr>
+          <td><input type="number" value="${bp.min}" min="0" step="1000"
+            onchange="updateBreakpoint('${context}', ${i}, 'min', this.value)" /></td>
+          <td><input type="number" value="${bp.rate}" min="0" max="100" step="0.01"
+            onchange="updateBreakpoint('${context}', ${i}, 'rate', this.value)" /></td>
+          <td><button class="del-btn" onclick="removeBreakpoint('${context}', ${i})">✕</button></td>
+        </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+function getSortedIndex(context, rawIndex) {
+  const schedule = context === 'base' ? state.baseSchedule : getProduct(context)?.schedule;
+  const sorted = [...schedule].sort((a, b) => a.min - b.min);
+  return schedule.indexOf(sorted[rawIndex]);
+}
+
+function updateBreakpoint(context, sortedIdx, field, value) {
+  const schedule = context === 'base' ? state.baseSchedule : getProduct(context)?.schedule;
+  const sorted = [...schedule].sort((a, b) => a.min - b.min);
+  const realIdx = schedule.indexOf(sorted[sortedIdx]);
+  schedule[realIdx][field] = parseFloat(value) || 0;
+  if (context === 'base') renderBaseSchedule();
+  else openProductEditor(context);
+  updateSim();
+}
+
+function removeBreakpoint(context, sortedIdx) {
+  const schedule = context === 'base' ? state.baseSchedule : getProduct(context)?.schedule;
+  if (schedule.length <= 1) return alert('Il faut au moins un palier.');
+  const sorted = [...schedule].sort((a, b) => a.min - b.min);
+  const realIdx = schedule.indexOf(sorted[sortedIdx]);
+  schedule.splice(realIdx, 1);
+  if (context === 'base') renderBaseSchedule();
+  else openProductEditor(context);
+  updateSim();
+}
+
+function addBreakpoint(context) {
+  const schedule = context === 'base' ? state.baseSchedule : getProduct(context)?.schedule;
+  const lastMin = Math.max(...schedule.map(b => b.min));
+  const lastRate = schedule.find(b => b.min === lastMin)?.rate ?? 1;
+  schedule.push({ min: lastMin + 100000, rate: Math.max(0, lastRate - 0.5) });
+  if (context === 'base') renderBaseSchedule();
+  else openProductEditor(context);
+  updateSim();
+}
+
+function openProductEditor(id) {
+  const product = getProduct(id);
+  const editor = document.getElementById('product-editor');
+  if (!product) return;
+
+  let scheduleBlock = '';
+  if (product.type === 'independent') {
+    scheduleBlock = `
+      <div class="section-title" style="margin-top:20px;">
+        Paliers de frais
+        <button class="btn btn-ghost btn-sm" onclick="addBreakpoint('${id}')">+ Ajouter</button>
+      </div>
+      <div id="prod-schedule-${id}">${renderScheduleTable(id, product.schedule)}</div>`;
+  } else {
+    scheduleBlock = `
+      <div class="section-title" style="margin-top:20px;">Coefficient appliqué au barème commun</div>
+      <div class="coeff-wrap">
+        <input type="number" value="${product.coeff ?? 1}" step="0.01" min="0" style="width:120px;"
+          oninput="updateCoeff('${id}', this.value)" id="coeff-input-${id}">
+        <span class="coeff-preview" id="coeff-preview-${id}">= ${((product.coeff ?? 1) * 100).toFixed(0)}% du barème commun</span>
+      </div>
+      <div style="margin-top:16px;">
+        <div class="card-title">Aperçu du barème résultant</div>
+        <div id="coeff-result-${id}">${renderCoeffPreview(product)}</div>
+      </div>`;
+  }
+
+  editor.innerHTML = `
+    <div class="flex-between">
+      <div class="section-title" style="border:none;padding:0;margin:0;font-size:1.1rem;">${product.name}</div>
+      <button class="btn btn-danger btn-sm" onclick="deleteProduct('${id}')">Supprimer</button>
+    </div>
+    <hr class="sep">
+    <div class="form-group">
+      <label class="form-label">Nom du produit</label>
+      <input type="text" value="${product.name}" oninput="renameProduct('${id}', this.value)">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Type de barème</label>
+      <select onchange="changeProductType('${id}', this.value)">
+        <option value="independent" ${product.type === 'independent' ? 'selected' : ''}>Barème indépendant</option>
+        <option value="coefficient" ${product.type === 'coefficient' ? 'selected' : ''}>Barème commun × coefficient</option>
+      </select>
+    </div>
+    ${scheduleBlock}`;
+}
+
+function renderCoeffPreview(product) {
+  const schedule = getEffectiveSchedule(product);
+  return renderScheduleTable('_readonly', schedule).replace(/type="number"/g, 'type="number" disabled style="opacity:0.6;"');
+}
+
+function updateCoeff(id, val) {
+  const product = getProduct(id);
+  product.coeff = parseFloat(val) || 1;
+  document.getElementById(`coeff-preview-${id}`).textContent = `= ${(product.coeff * 100).toFixed(0)}% du barème commun`;
+  document.getElementById(`coeff-result-${id}`).innerHTML = renderCoeffPreview(product);
+  updateSim();
+}
+
+function renameProduct(id, name) {
+  getProduct(id).name = name;
+  renderProductList();
+  populateProductSelect();
+preRenderLogoForPdf();
+}
+
+function changeProductType(id, type) {
+  const product = getProduct(id);
+  if (type === 'coefficient' && !product.coeff) product.coeff = 1;
+  if (type === 'independent' && !product.schedule) {
+    product.schedule = JSON.parse(JSON.stringify(state.baseSchedule));
+  }
+  product.type = type;
+  openProductEditor(id);
+  renderProductList();
+  updateSim();
+}
+
+function deleteProduct(id) {
+  if (!confirm('Supprimer ce produit ?')) return;
+  state.products = state.products.filter(p => p.id !== id);
+  state.selectedProductId = state.products[0]?.id || null;
+  renderSettings();
+  populateProductSelect();
+preRenderLogoForPdf();
+  updateSim();
+}
+
+// ==================== ADD PRODUCT MODAL ====================
+function openAddProduct() {
+  document.getElementById('new-product-name').value = '';
+  document.getElementById('new-product-type').value = 'independent';
+  document.getElementById('new-product-coeff').value = '1.00';
+  toggleCoeffField();
+  document.getElementById('modal-add-product').classList.add('open');
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function toggleCoeffField() {
+  const type = document.getElementById('new-product-type').value;
+  document.getElementById('new-coeff-group').style.display = type === 'coefficient' ? 'block' : 'none';
+  document.getElementById('new-type-info').textContent = type === 'coefficient'
+    ? 'Ce produit utilisera le barème commun multiplié par le coefficient saisi.'
+    : 'Ce produit aura ses propres paliers de frais configurables indépendamment.';
+}
+
+function confirmAddProduct() {
+  const name = document.getElementById('new-product-name').value.trim();
+  if (!name) return alert('Veuillez saisir un nom.');
+  const type = document.getElementById('new-product-type').value;
+  const coeff = parseFloat(document.getElementById('new-product-coeff').value) || 1;
+  const product = { id: uid(), name, type };
+  if (type === 'independent') product.schedule = JSON.parse(JSON.stringify(state.baseSchedule));
+  else product.coeff = coeff;
+  state.products.push(product);
+  state.selectedProductId = product.id;
+  closeModal('modal-add-product');
+  populateProductSelect();
+preRenderLogoForPdf();
+  renderSettings();
+  updateSim();
+}
+
+// ==================== PDF EXPORT ====================
+function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const pid = document.getElementById('sim-product').value;
+  const product = getProduct(pid);
+  const amount = parseFloat(document.getElementById('sim-amount').value) || 0;
+  const schedule = getEffectiveSchedule(product);
+  const rate = computeRate(amount, schedule);
+  const fees = amount * rate / 100;
+  const net = amount - fees;
+  const today = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+  const W = 210, M = 18;
+
+  // Header band
+  doc.setFillColor(26, 58, 92);
+  doc.rect(0, 0, W, 42, 'F');
+
+  // Logo placeholder or actual logo
+  if (logoPngDataUrl) {
+    try { doc.addImage(logoPngDataUrl, 'PNG', M, 6, 56, 8); } catch(e) {}
+  } else {
+    doc.setFillColor(255, 255, 255, 0.2);
+    doc.setDrawColor(255, 255, 255);
+    doc.setLineWidth(0.3);
+    doc.rect(M, 9, 35, 14);
+    doc.setFontSize(8);
+    doc.setTextColor(200, 200, 200);
+    doc.text('LOGO', M + 17.5, 17.5, { align: 'center' });
+  }
+
+  // Title
+  doc.setFontSize(16);
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Simulation de frais d\'entrée', W - M, 20, { align: 'right' });
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(200, 200, 220);
+  doc.text(today, W - M, 28, { align: 'right' });
+
+  let y = 56;
+
+  // Product & amount block
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(26, 58, 92);
+  doc.text('Produit souscrit', M, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(50, 50, 50);
+  doc.text(product.name, M + 55, y);
+
+  y += 9;
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(26, 58, 92);
+  doc.text('Montant investi', M, y);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(50, 50, 50);
+  doc.text(new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(amount), M + 55, y);
+
+  // Result box
+  y += 14;
+  doc.setFillColor(245, 247, 250);
+  doc.roundedRect(M, y, W - 2 * M, 36, 3, 3, 'F');
+  doc.setDrawColor(26, 58, 92);
+  doc.setLineWidth(0.8);
+  doc.roundedRect(M, y, W - 2 * M, 36, 3, 3, 'D');
+
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 120);
+  doc.setFont('helvetica', 'normal');
+  doc.text('TAUX DE FRAIS APPLIQUÉ', W / 2, y + 9, { align: 'center' });
+  doc.setFontSize(22);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(200, 164, 74);
+  doc.text(fmtRate(rate), W / 2, y + 19, { align: 'center' });
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 120);
+  doc.setFont('helvetica', 'normal');
+  doc.text('FRAIS D\'ENTRÉE', W / 2, y + 27, { align: 'center' });
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(26, 58, 92);
+  doc.text(fmtEur(fees), W / 2, y + 34, { align: 'center' });
+
+  y += 46;
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(80, 80, 80);
+  doc.text(`Montant net investi après frais : ${fmtEur(net)}`, W / 2, y, { align: 'center' });
+
+  // Schedule table
+  y += 14;
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(26, 58, 92);
+  doc.text('Barème de frais applicable', M, y);
+  y += 4;
+
+  const sorted = [...schedule].sort((a, b) => a.min - b.min);
+  const tableData = sorted.map((bp, i) => {
+    const next = sorted[i + 1];
+    return [
+      fmt(bp.min) + ' €' + (next ? ' – ' + fmt(next.min - 1) + ' €' : ' et au-delà'),
+      next ? fmtRate(bp.rate) + ' → ' + fmtRate(next.rate) : fmtRate(bp.rate),
+      product.type === 'coefficient' ? `Barème commun × ${product.coeff?.toFixed(2)}` : 'Barème propre'
+    ];
+  });
+
+  doc.autoTable({
+    startY: y + 2,
+    head: [['Tranche', 'Taux (interpolation linéaire)', 'Type']],
+    body: tableData,
+    theme: 'grid',
+    headStyles: { fillColor: [3, 95, 147], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+    bodyStyles: { fontSize: 9, textColor: [50, 50, 50] },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: { 0: { cellWidth: 70 }, 1: { cellWidth: 60 }, 2: { cellWidth: 50 } },
+    margin: { left: M, right: M },
+  });
+
+  // Footer
+  const pageH = 297;
+  doc.setFontSize(8);
+  doc.setTextColor(150, 150, 150);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Document généré à titre indicatif — non contractuel', W / 2, pageH - 14, { align: 'center' });
+  doc.text(`Émis le ${today}`, W / 2, pageH - 9, { align: 'center' });
+  doc.setDrawColor(200, 164, 74);
+  doc.setLineWidth(1);
+  doc.line(M, pageH - 18, W - M, pageH - 18);
+
+  doc.save(`frais-entree-${product.name.replace(/\s+/g, '-').toLowerCase()}-${fmt(amount)}eur.pdf`);
+}
+
+// ==================== MULTI-SUPPORTS ====================
+let multiLines = []; // [{ id, productId, amount }]
+let multiLineCounter = 0;
+
+function addMultiLine(productId, amount) {
+  const id = 'ml' + (++multiLineCounter);
+  const pid = productId || state.products[0]?.id || '';
+  multiLines.push({ id, productId: pid, amount: amount || 100000 });
+  renderMultiTable();
+}
+
+function removeMultiLine(id) {
+  multiLines = multiLines.filter(l => l.id !== id);
+  renderMultiTable();
+}
+
+function updateMultiLine(id, field, value) {
+  const line = multiLines.find(l => l.id === id);
+  if (!line) return;
+  if (field === 'productId') {
+    line.productId = value;
+    renderMultiTable();
+    return;
+  }
+  if (field === 'amount') {
+    line.amount = parseFloat(value) || 0;
+    const totalAmount = multiLines.reduce((s, l) => s + (l.amount || 0), 0);
+    multiLines.forEach(l => {
+      const p = getProduct(l.productId);
+      const sched = p ? getEffectiveSchedule(p) : [];
+      const r = p ? computeRate(l.amount, sched) : 0;
+      const f = l.amount * r / 100;
+      const pct = totalAmount > 0 ? (l.amount / totalAmount * 100) : 0;
+      const rateEl = document.getElementById('rate-' + l.id);
+      const feesEl = document.getElementById('fees-' + l.id);
+      const pctValEl = document.getElementById('pct-val-' + l.id);
+      const pctFillEl = document.getElementById('pct-bar-fill-' + l.id);
+      if (rateEl) rateEl.textContent = fmtRate(r);
+      if (feesEl) feesEl.textContent = fmtEur(f);
+      if (pctValEl) pctValEl.textContent = pct.toFixed(1) + ' %';
+      if (pctFillEl) pctFillEl.style.width = Math.min(pct, 100) + '%';
+    });
+    updateMultiSummary(multiLines);
+  }
+}
+
+function renderMultiTable() {
+  const tbody = document.getElementById('multi-tbody');
+  if (!multiLines.length) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted);font-size:0.92rem;">
+      Aucun support ajouté. Cliquez sur « + Ajouter un support » pour commencer.
+    </td></tr>`;
+    updateMultiSummary([]);
+    return;
+  }
+
+  const totalAmount = multiLines.reduce((s, l) => s + (l.amount || 0), 0);
+
+  tbody.innerHTML = multiLines.map(line => {
+    const product = getProduct(line.productId);
+    const schedule = product ? getEffectiveSchedule(product) : [];
+    const rate = product ? computeRate(line.amount, schedule) : 0;
+    const fees = line.amount * rate / 100;
+    const pct = totalAmount > 0 ? (line.amount / totalAmount * 100) : 0;
+
+    const productOptions = state.products.map(p =>
+      `<option value="${p.id}" ${p.id === line.productId ? 'selected' : ''}>${p.name}</option>`
+    ).join('');
+
+    return `<tr>
+      <td>
+        <select onchange="updateMultiLine('${line.id}', 'productId', this.value)">${productOptions}</select>
+      </td>
+      <td>
+        <input type="number" value="${line.amount}" min="0" step="1000"
+          oninput="updateMultiLine('${line.id}', 'amount', this.value)" style="width:160px;">
+      </td>
+      <td class="rate-cell" id="rate-${line.id}">${fmtRate(rate)}</td>
+      <td class="fees-cell" id="fees-${line.id}">${fmtEur(fees)}</td>
+      <td style="text-align:right;min-width:80px;">
+        <div id="pct-val-${line.id}" style="font-size:0.82rem;font-weight:600;color:var(--text-muted);margin-bottom:3px;">${pct.toFixed(1)} %</div>
+        <div class="pct-bar"><div id="pct-bar-fill-${line.id}" class="pct-bar-fill" style="width:${Math.min(pct,100)}%"></div></div>
+      </td>
+      <td><button class="del-btn" onclick="removeMultiLine('${line.id}')">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  updateMultiSummary(multiLines);
+}
+
+function updateMultiSummary(lines) {
+  const totalAmount = lines.reduce((s, l) => s + (l.amount || 0), 0);
+  const totalFees = lines.reduce((s, l) => {
+    const p = getProduct(l.productId);
+    if (!p) return s;
+    const rate = computeRate(l.amount, getEffectiveSchedule(p));
+    return s + l.amount * rate / 100;
+  }, 0);
+  const avgRate = totalAmount > 0 ? (totalFees / totalAmount * 100) : 0;
+  const netTotal = totalAmount - totalFees;
+
+  document.getElementById('ms-total-amount').textContent = lines.length ? fmtEur(totalAmount) : '—';
+  document.getElementById('ms-avg-rate').textContent = lines.length ? fmtRate(avgRate) : '—';
+  document.getElementById('ms-total-fees').textContent = lines.length ? fmtEur(totalFees) : '—';
+  document.getElementById('ms-net').textContent = lines.length ? 'Net investi : ' + fmtEur(netTotal) : '';
+}
+
+function exportMultiPDF() {
+  if (!multiLines.length) return alert('Ajoutez au moins un support avant d\'exporter.');
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const today = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+  const W = 210, M = 18;
+
+  const totalAmount = multiLines.reduce((s, l) => s + (l.amount || 0), 0);
+  const totalFees = multiLines.reduce((s, l) => {
+    const p = getProduct(l.productId);
+    if (!p) return s;
+    return s + l.amount * computeRate(l.amount, getEffectiveSchedule(p)) / 100;
+  }, 0);
+  const avgRate = totalAmount > 0 ? (totalFees / totalAmount * 100) : 0;
+  const netTotal = totalAmount - totalFees;
+
+  // Header
+  doc.setFillColor(26, 58, 92);
+  doc.rect(0, 0, W, 42, 'F');
+  if (logoPngDataUrl) {
+    try { doc.addImage(logoPngDataUrl, 'PNG', M, 6, 56, 8); } catch(e) {}
+  } else {
+    doc.setDrawColor(255,255,255); doc.setLineWidth(0.3);
+    doc.rect(M, 9, 35, 14);
+    doc.setFontSize(8); doc.setTextColor(200,200,200);
+    doc.text('LOGO', M + 17.5, 17.5, { align: 'center' });
+  }
+  doc.setFontSize(16); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold');
+  doc.text('Simulation multi-supports', W - M, 20, { align: 'right' });
+  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(200,200,220);
+  doc.text(today, W - M, 28, { align: 'right' });
+
+  let y = 54;
+
+  // Summary boxes
+  const boxW = (W - 2*M - 8) / 3;
+  const boxes = [
+    { label: 'Total investi', value: fmtEur(totalAmount) },
+    { label: 'Taux moyen pondéré', value: fmtRate(avgRate), highlight: true },
+    { label: 'Total frais d\'entrée', value: fmtEur(totalFees) },
+  ];
+  boxes.forEach((b, i) => {
+    const bx = M + i * (boxW + 4);
+    if (b.highlight) {
+      doc.setFillColor(26,58,92); doc.roundedRect(bx, y, boxW, 26, 2, 2, 'F');
+      doc.setTextColor(200,164,74);
+    } else {
+      doc.setFillColor(245,247,250); doc.roundedRect(bx, y, boxW, 26, 2, 2, 'F');
+      doc.setDrawColor(220,225,234); doc.setLineWidth(0.3); doc.roundedRect(bx, y, boxW, 26, 2, 2, 'D');
+      doc.setTextColor(26,58,92);
+    }
+    doc.setFontSize(7); doc.setFont('helvetica','normal');
+    doc.setTextColor(b.highlight ? [200,200,220] : [100,110,130]);
+    doc.text(b.label.toUpperCase(), bx + boxW/2, y + 7, { align: 'center' });
+    doc.setFontSize(13); doc.setFont('helvetica','bold');
+    doc.setTextColor(b.highlight ? [200,164,74] : [3,95,147]);
+    doc.text(b.value, bx + boxW/2, y + 18, { align: 'center' });
+  });
+
+  y += 34;
+  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,120);
+  doc.text(`Montant net total investi après frais : ${fmtEur(netTotal)}`, W/2, y, { align: 'center' });
+
+  y += 12;
+  doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(26,58,92);
+  doc.text('Détail par support', M, y);
+
+  const tableData = multiLines.map(line => {
+    const p = getProduct(line.productId);
+    if (!p) return ['—', '—', '—', '—', '—'];
+    const rate = computeRate(line.amount, getEffectiveSchedule(p));
+    const fees = line.amount * rate / 100;
+    const pct = totalAmount > 0 ? (line.amount / totalAmount * 100).toFixed(1) + ' %' : '—';
+    return [p.name, fmtEur(line.amount), fmtRate(rate), fmtEur(fees), pct];
+  });
+
+  // Totals row
+  tableData.push(['TOTAL', fmtEur(totalAmount), fmtRate(avgRate) + ' (moy.)', fmtEur(totalFees), '100,0 %']);
+
+  doc.autoTable({
+    startY: y + 4,
+    head: [['Produit', 'Montant investi', 'Taux appliqué', 'Frais d\'entrée', '% du total']],
+    body: tableData,
+    theme: 'grid',
+    headStyles: { fillColor: [3,95,147], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+    bodyStyles: { fontSize: 9, textColor: [50,50,50] },
+    alternateRowStyles: { fillColor: [248,250,252] },
+    didParseCell: data => {
+      if (data.row.index === tableData.length - 1 && data.section === 'body') {
+        data.cell.styles.fontStyle = 'bold';
+        data.cell.styles.fillColor = [240,244,250];
+        data.cell.styles.textColor = [3,95,147];
+      }
+    },
+    columnStyles: { 0:{cellWidth:42}, 1:{cellWidth:42,halign:'right'}, 2:{cellWidth:36,halign:'right'}, 3:{cellWidth:40,halign:'right'}, 4:{cellWidth:24,halign:'right'} },
+    margin: { left: M, right: M },
+  });
+
+  const pageH = 297;
+  doc.setFontSize(8); doc.setTextColor(150,150,150); doc.setFont('helvetica','normal');
+  doc.text('Document généré à titre indicatif — non contractuel', W/2, pageH-14, { align: 'center' });
+  doc.text(`Émis le ${today}`, W/2, pageH-9, { align: 'center' });
+  doc.setDrawColor(200,164,74); doc.setLineWidth(1);
+  doc.line(M, pageH-18, W-M, pageH-18);
+
+  doc.save(`frais-multi-supports-${today.replace(/\s/g,'-')}.pdf`);
+}
+
+// ==================== LOGO ====================
+
+
+// ==================== PRE-RENDER LOGO FOR PDF ====================
+let logoPngDataUrl = null;
+function preRenderLogoForPdf() {
+  const domImg = document.getElementById('logo-img');
+  function doRender(img) {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 560; canvas.height = 85;
+      canvas.getContext('2d').drawImage(img, 0, 0, 560, 85);
+      logoPngDataUrl = canvas.toDataURL('image/png');
+    } catch(e) { logoPngDataUrl = null; }
+  }
+  if (!domImg) return;
+  if (state.logo) {
+    const img = new Image();
+    img.onload = () => doRender(img);
+    img.src = state.logo;
+  } else if (domImg.complete && domImg.naturalWidth) {
+    doRender(domImg);
+  } else {
+    domImg.addEventListener('load', () => doRender(domImg), { once: true });
+  }
+}
+// ==================== INIT ====================
+populateProductSelect();
+preRenderLogoForPdf();
+updateSim();
+// Deux lignes d'exemple pour le multi-supports
+addMultiLine(state.products[0]?.id, 100000);
+addMultiLine(state.products[1]?.id, 50000);
+</script>
+</body>
+</html>
+
+
+
+
+
+
+
+
