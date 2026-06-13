@@ -65,12 +65,16 @@ jobs:
           echo "Signature terminée"
           codesign --verify --verbose "$APP" || true
 
-      - name: Créer le DMG
+      - name: Créer le DMG avec raccourci Applications
         run: |
           APP=$(find dist -name "*.app" -maxdepth 3 | head -1)
+          # Dossier de staging pour le DMG
+          mkdir -p /tmp/dmg-staging
+          cp -r "$APP" /tmp/dmg-staging/
+          ln -s /Applications /tmp/dmg-staging/Applications
           hdiutil create \
             -volname "Calculateur de Frais" \
-            -srcfolder "$APP" \
+            -srcfolder /tmp/dmg-staging \
             -ov -format UDZO \
             dist/CalculateurFrais-Mac.dmg
           echo "DMG créé"
