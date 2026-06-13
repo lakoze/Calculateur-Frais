@@ -1029,6 +1029,30 @@ function confirmAddProduct() {
 }
 
 // ==================== PDF HELPERS ====================
+// Formatage PDF : espaces normaux, pas d'Unicode insécable
+function pdfNum(n) {
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+function pdfEur(n) {
+  const abs = Math.abs(n);
+  const ent = Math.floor(abs);
+  const dec = Math.round((abs - ent) * 100).toString().padStart(2, '0');
+  const entStr = ent.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return (n < 0 ? '-' : '') + entStr + ',' + dec + ' EUR';
+}
+function pdfRate(r) {
+  if (r % 1 === 0) return r.toFixed(0) + ' %';
+  return r.toFixed(2).replace('.', ',') + ' %';
+}
+function pdfTranche(bp, next) {
+  if (!next) {
+    if (bp.min === 0) return 'Tous montants';
+    return 'A partir de ' + pdfNum(bp.min) + ' EUR';
+  }
+  if (bp.min === 0) return 'Jusqu\'a ' + pdfNum(next.min) + ' EUR';
+  return 'De ' + pdfNum(bp.min) + ' a ' + pdfNum(next.min) + ' EUR';
+}
+
 function pdfSave(doc, filename) {
   const blob = doc.output('blob');
   const url = URL.createObjectURL(blob);
@@ -1120,15 +1144,13 @@ function exportPDF() {
   const rate = computeRate(amount, schedule);
   const fees = amount * rate / 100;
   const net = amount - fees;
-  const fmtCur = v => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(v);
-
-  const { y: startY, W, M, today } = pdfHeader(doc, 'Simulation de frais d\'entrée', clientName);
+  const { y: startY, W, M, today } = pdfHeader(doc, 'Simulation de frais d\'entree', clientName);
   let y = startY;
 
   // Infos produit / montant
   const infoRows = [
     ['Produit souscrit', product.name],
-    ['Montant investi', fmtCur(amount)],
+    ['Montant investi', pdfEur(amount)],
   ];
   infoRows.forEach(([label, val]) => {
     doc.setFontSize(10);
@@ -1153,11 +1175,11 @@ function exportPDF() {
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(180, 200, 220);
-  doc.text('TAUX DE FRAIS APPLIQUÉ', M + halfW / 2, y + 9, { align: 'center' });
+  doc.text('TAUX DE FRAIS APPLIQUE', M + halfW / 2, y + 9, { align: 'center' });
   doc.setFontSize(24);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(200, 164, 74);
-  doc.text(fmtRate(rate), M + halfW / 2, y + 24, { align: 'center' });
+  doc.text(pdfRate(rate), M + halfW / 2, y + 24, { align: 'center' });
 
   // Frais
   const bx2 = M + halfW + 6;
@@ -1168,15 +1190,15 @@ function exportPDF() {
   doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 110, 130);
-  doc.text('FRAIS D\'ENTRÉE', bx2 + halfW / 2, y + 9, { align: 'center' });
+  doc.text('FRAIS D\'ENTREE', bx2 + halfW / 2, y + 9, { align: 'center' });
   doc.setFontSize(20);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(3, 95, 147);
-  doc.text(fmtEur(fees), bx2 + halfW / 2, y + 24, { align: 'center' });
+  doc.text(pdfEur(fees), bx2 + halfW / 2, y + 24, { align: 'center' });
 
   y += boxH + 8;
 
-  // Montant net — ligne mise en valeur
+  // Montant net
   doc.setFillColor(235, 245, 235);
   doc.setDrawColor(100, 160, 100);
   doc.setLineWidth(0.3);
@@ -1184,7 +1206,7 @@ function exportPDF() {
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(30, 100, 30);
-  doc.text(`Montant net investi après frais : ${fmtCur(net)}`, W / 2, y + 8, { align: 'center' });
+  doc.text('Montant net investi apres frais : ' + pdfEur(net), W / 2, y + 8, { align: 'center' });
 
   y += 20;
 
@@ -1192,31 +1214,35 @@ function exportPDF() {
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(26, 58, 92);
-  doc.text('Barème de frais', M, y);
+  doc.text('Bareme de frais applicable', M, y);
   y += 4;
 
   const sorted = [...schedule].sort((a, b) => a.min - b.min);
-  const tableData = sorted.map((bp, i) => {
-    const next = sorted[i + 1];
-    const tranche = fmt(bp.min) + ' €' + (next ? ' – ' + fmt(next.min - 1) + ' €' : ' et au-delà');
-    const taux = next ? fmtRate(bp.rate) + ' → ' + fmtRate(next.rate) : fmtRate(bp.rate);
-    return [tranche, taux];
-  });
+  const allSameRate = sorted.every(bp => bp.rate === sorted[0].rate);
+  let tableData;
+  if (allSameRate) {
+    tableData = [['Tous montants confondus', pdfRate(sorted[0].rate)]];
+  } else {
+    tableData = sorted.map((bp, i) => {
+      const next = sorted[i + 1];
+      return [pdfTranche(bp, next), pdfRate(bp.rate)];
+    });
+  }
 
   doc.autoTable({
     startY: y + 2,
-    head: [['Tranche d\'investissement', 'Taux de frais']],
+    head: [['Tranche', 'Taux de frais']],
     body: tableData,
     theme: 'grid',
     headStyles: { fillColor: [3, 95, 147], textColor: 255, fontStyle: 'bold', fontSize: 9 },
-    bodyStyles: { fontSize: 9.5, textColor: [40, 40, 40] },
+    bodyStyles: { fontSize: 10, textColor: [40, 40, 40] },
     alternateRowStyles: { fillColor: [248, 250, 252] },
     columnStyles: { 0: { cellWidth: 110 }, 1: { cellWidth: 64, halign: 'right' } },
     margin: { left: M, right: M },
   });
 
   pdfFooter(doc, today);
-  pdfSave(doc, `Frais-${product.name.replace(/\s+/g, '-')}-${fmt(amount)}EUR.pdf`);
+  pdfSave(doc, 'Frais-' + product.name.replace(/\s+/g, '-') + '-' + pdfNum(amount) + 'EUR.pdf');
 }
 
 // ==================== MULTI-SUPPORTS ====================
@@ -1331,7 +1357,6 @@ function exportMultiPDF() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const clientName = (document.getElementById('multi-client-name')?.value || '').trim();
-  const fmtCur = v => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(v);
 
   const totalAmount = multiLines.reduce((s, l) => s + (l.amount || 0), 0);
   const totalFees = multiLines.reduce((s, l) => {
@@ -1348,9 +1373,9 @@ function exportMultiPDF() {
   // 3 boxes de synthèse
   const boxW = (W - 2 * M - 8) / 3;
   const boxes = [
-    { label: 'Total investi', value: fmtCur(totalAmount), highlight: false },
-    { label: 'Taux moyen pondéré', value: fmtRate(avgRate), highlight: true },
-    { label: 'Total frais d\'entrée', value: fmtCur(totalFees), highlight: false },
+    { label: 'Total investi', value: pdfEur(totalAmount), highlight: false },
+    { label: 'Taux moyen pondere', value: pdfRate(avgRate), highlight: true },
+    { label: 'Total frais d\'entree', value: pdfEur(totalFees), highlight: false },
   ];
   boxes.forEach((b, i) => {
     const bx = M + i * (boxW + 4);
@@ -1379,27 +1404,27 @@ function exportMultiPDF() {
   doc.setDrawColor(100, 160, 100); doc.setLineWidth(0.3);
   doc.roundedRect(M, y, W - 2 * M, 12, 2, 2, 'FD');
   doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 100, 30);
-  doc.text(`Montant net total investi après frais : ${fmtCur(netTotal)}`, W / 2, y + 8, { align: 'center' });
+  doc.text('Montant net total apres frais : ' + pdfEur(netTotal), W / 2, y + 8, { align: 'center' });
 
   y += 20;
 
   // Titre tableau
   doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 58, 92);
-  doc.text('Détail par support', M, y);
+  doc.text('Detail par support', M, y);
 
   const tableData = multiLines.map(line => {
     const p = getProduct(line.productId);
-    if (!p) return ['—', '—', '—', '—', '—'];
+    if (!p) return ['-', '-', '-', '-', '-'];
     const rate = computeRate(line.amount, getEffectiveSchedule(p));
     const fees = line.amount * rate / 100;
-    const pct = totalAmount > 0 ? (line.amount / totalAmount * 100).toFixed(1) + ' %' : '—';
-    return [p.name, fmtCur(line.amount), fmtRate(rate), fmtCur(fees), pct];
+    const pct = totalAmount > 0 ? (line.amount / totalAmount * 100).toFixed(1) + ' %' : '-';
+    return [p.name, pdfEur(line.amount), pdfRate(rate), pdfEur(fees), pct];
   });
-  tableData.push(['TOTAL', fmtCur(totalAmount), fmtRate(avgRate) + ' moy.', fmtCur(totalFees), '100,0 %']);
+  tableData.push(['TOTAL', pdfEur(totalAmount), pdfRate(avgRate) + ' moy.', pdfEur(totalFees), '100,0 %']);
 
   doc.autoTable({
     startY: y + 4,
-    head: [['Produit / Support', 'Montant investi', 'Taux appliqué', 'Frais d\'entrée', '% du total']],
+    head: [['Produit / Support', 'Montant investi', 'Taux applique', 'Frais d\'entree', '% du total']],
     body: tableData,
     theme: 'grid',
     headStyles: { fillColor: [3, 95, 147], textColor: 255, fontStyle: 'bold', fontSize: 9 },
