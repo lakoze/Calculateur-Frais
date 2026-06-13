@@ -1054,82 +1054,80 @@ function pdfTranche(bp, next) {
 }
 
 function pdfSave(doc, filename) {
-  const blob = doc.output('blob');
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+  try {
+    const blob = doc.output('blob');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+  } catch(e) {
+    doc.save(filename);
+  }
+}
+
+function pdfDateFr() {
+  const d = new Date();
+  const mois = ['janvier','fevrier','mars','avril','mai','juin',
+                 'juillet','aout','septembre','octobre','novembre','decembre'];
+  return d.getDate() + ' ' + mois[d.getMonth()] + ' ' + d.getFullYear();
 }
 
 function pdfHeader(doc, title, clientName) {
-  const W = 210, M = 18;
-  const today = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+  const W = 210, M = 15;
+  const today = pdfDateFr();
 
-  // Bande header
   doc.setFillColor(26, 58, 92);
-  doc.rect(0, 0, W, 38, 'F');
+  doc.rect(0, 0, W, 36, 'F');
 
-  // Logo
-  if (logoPngDataUrl) {
-    try { doc.addImage(logoPngDataUrl, 'PNG', M, 7, 52, 8); } catch(e) { pdfLogoText(doc, M); }
-  } else {
-    pdfLogoText(doc, M);
-  }
-
-  // Titre + date
-  doc.setFontSize(15);
-  doc.setTextColor(255, 255, 255);
+  // Nom entreprise (texte uniquement, pas d'image - plus leger et fiable)
+  doc.setFontSize(18);
   doc.setFont('helvetica', 'bold');
-  doc.text(title, W - M, 18, { align: 'right' });
-  doc.setFontSize(8.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text('INOVEA', M, 16);
+  doc.setFontSize(7.5);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(180, 200, 220);
-  doc.text(today, W - M, 26, { align: 'right' });
+  doc.setTextColor(160, 190, 220);
+  doc.text('Conseil en gestion de patrimoine', M, 23);
 
-  // Ligne dorée sous le header
+  // Titre du document
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 255, 255);
+  doc.text(title, W - M, 16, { align: 'right' });
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(160, 190, 220);
+  doc.text('Le ' + today, W - M, 23, { align: 'right' });
+
+  // Ligne dorée
   doc.setDrawColor(200, 164, 74);
-  doc.setLineWidth(0.8);
-  doc.line(0, 38, W, 38);
+  doc.setLineWidth(1);
+  doc.line(0, 36, W, 36);
 
-  // Nom client si fourni
-  let y = 50;
+  let y = 48;
   if (clientName) {
     doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(26, 58, 92);
-    doc.text('Client :', M, y);
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(40, 40, 40);
-    doc.text(clientName, M + 22, y);
+    doc.setTextColor(60, 60, 60);
+    doc.text('Client : ' + clientName, M, y);
     y += 10;
   }
   return { y, W, M, today };
 }
 
-function pdfLogoText(doc, M) {
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(255, 255, 255);
-  doc.text('INOVEA', M, 20);
-  doc.setFontSize(7);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(180, 200, 220);
-  doc.text('Conseil en gestion de patrimoine', M, 26);
-}
-
 function pdfFooter(doc, today) {
-  const W = 210, M = 18, pageH = 297;
+  const W = 210, M = 15, pageH = 297;
   doc.setDrawColor(200, 164, 74);
-  doc.setLineWidth(0.6);
-  doc.line(M, pageH - 20, W - M, pageH - 20);
-  doc.setFontSize(7.5);
-  doc.setTextColor(160, 160, 160);
+  doc.setLineWidth(0.5);
+  doc.line(M, pageH - 18, W - M, pageH - 18);
+  doc.setFontSize(7);
+  doc.setTextColor(150, 150, 150);
   doc.setFont('helvetica', 'normal');
-  doc.text('Document généré à titre indicatif — non contractuel', M, pageH - 13);
-  doc.text(`Émis le ${today}`, W - M, pageH - 13, { align: 'right' });
+  doc.text('Document indicatif - non contractuel', M, pageH - 11);
+  doc.text('Emis le ' + today + ' | INOVEA', W - M, pageH - 11, { align: 'right' });
 }
 
 // ==================== PDF EXPORT ====================
