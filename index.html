@@ -426,9 +426,13 @@
         </div>
 
         <!-- PDF -->
-        <button class="btn btn-accent" style="width:100%;justify-content:center;" onclick="exportPDF()">
-          &#128196; Exporter en PDF
-        </button>
+        <div class="card" style="padding:12px 16px;">
+          <div class="card-title" style="margin-bottom:8px;">Export PDF</div>
+          <input type="text" id="sim-client-name" placeholder="Nom du client (optionnel)" style="width:100%;margin-bottom:10px;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.9rem;background:var(--bg);color:var(--text);">
+          <button class="btn btn-accent" style="width:100%;justify-content:center;" onclick="exportPDF()">
+            &#128196; Exporter en PDF
+          </button>
+        </div>
 
       </div>
 
@@ -453,6 +457,7 @@
         <span>Répartition multi-supports</span>
         <div style="display:flex;gap:8px;">
           <button class="btn btn-ghost btn-sm" onclick="addMultiLine()">+ Ajouter un support</button>
+          <input type="text" id="multi-client-name" placeholder="Nom du client" style="padding:5px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.85rem;background:var(--bg);color:var(--text);width:160px;">
           <button class="btn btn-accent btn-sm" onclick="exportMultiPDF()">&#128196; Exporter PDF</button>
         </div>
       </div>
@@ -965,7 +970,6 @@ function renameProduct(id, name) {
   getProduct(id).name = name;
   renderProductList();
   populateProductSelect();
-preRenderLogoForPdf();
 }
 
 function changeProductType(id, type) {
@@ -986,7 +990,6 @@ function deleteProduct(id) {
   state.selectedProductId = state.products[0]?.id || null;
   renderSettings();
   populateProductSelect();
-preRenderLogoForPdf();
   updateSim();
 }
 
@@ -1021,9 +1024,88 @@ function confirmAddProduct() {
   state.selectedProductId = product.id;
   closeModal('modal-add-product');
   populateProductSelect();
-preRenderLogoForPdf();
   renderSettings();
   updateSim();
+}
+
+// ==================== PDF HELPERS ====================
+function pdfSave(doc, filename) {
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+}
+
+function pdfHeader(doc, title, clientName) {
+  const W = 210, M = 18;
+  const today = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
+
+  // Bande header
+  doc.setFillColor(26, 58, 92);
+  doc.rect(0, 0, W, 38, 'F');
+
+  // Logo
+  if (logoPngDataUrl) {
+    try { doc.addImage(logoPngDataUrl, 'PNG', M, 7, 52, 8); } catch(e) { pdfLogoText(doc, M); }
+  } else {
+    pdfLogoText(doc, M);
+  }
+
+  // Titre + date
+  doc.setFontSize(15);
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.text(title, W - M, 18, { align: 'right' });
+  doc.setFontSize(8.5);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(180, 200, 220);
+  doc.text(today, W - M, 26, { align: 'right' });
+
+  // Ligne dorée sous le header
+  doc.setDrawColor(200, 164, 74);
+  doc.setLineWidth(0.8);
+  doc.line(0, 38, W, 38);
+
+  // Nom client si fourni
+  let y = 50;
+  if (clientName) {
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(26, 58, 92);
+    doc.text('Client :', M, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(40, 40, 40);
+    doc.text(clientName, M + 22, y);
+    y += 10;
+  }
+  return { y, W, M, today };
+}
+
+function pdfLogoText(doc, M) {
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 255, 255);
+  doc.text('INOVEA', M, 20);
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(180, 200, 220);
+  doc.text('Conseil en gestion de patrimoine', M, 26);
+}
+
+function pdfFooter(doc, today) {
+  const W = 210, M = 18, pageH = 297;
+  doc.setDrawColor(200, 164, 74);
+  doc.setLineWidth(0.6);
+  doc.line(M, pageH - 20, W - M, pageH - 20);
+  doc.setFontSize(7.5);
+  doc.setTextColor(160, 160, 160);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Document généré à titre indicatif — non contractuel', M, pageH - 13);
+  doc.text(`Émis le ${today}`, W - M, pageH - 13, { align: 'right' });
 }
 
 // ==================== PDF EXPORT ====================
@@ -1033,132 +1115,108 @@ function exportPDF() {
   const pid = document.getElementById('sim-product').value;
   const product = getProduct(pid);
   const amount = parseFloat(document.getElementById('sim-amount').value) || 0;
+  const clientName = (document.getElementById('sim-client-name')?.value || '').trim();
   const schedule = getEffectiveSchedule(product);
   const rate = computeRate(amount, schedule);
   const fees = amount * rate / 100;
   const net = amount - fees;
-  const today = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
-  const W = 210, M = 18;
+  const fmtCur = v => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(v);
 
-  // Header band
+  const { y: startY, W, M, today } = pdfHeader(doc, 'Simulation de frais d\'entrée', clientName);
+  let y = startY;
+
+  // Infos produit / montant
+  const infoRows = [
+    ['Produit souscrit', product.name],
+    ['Montant investi', fmtCur(amount)],
+  ];
+  infoRows.forEach(([label, val]) => {
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(26, 58, 92);
+    doc.text(label, M, y);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(40, 40, 40);
+    doc.text(val, M + 52, y);
+    y += 8;
+  });
+
+  y += 6;
+
+  // Encadré résultat — 2 colonnes côte à côte
+  const boxH = 34;
+  const halfW = (W - 2 * M - 6) / 2;
+
+  // Taux
   doc.setFillColor(26, 58, 92);
-  doc.rect(0, 0, W, 42, 'F');
-
-  // Logo placeholder or actual logo
-  if (logoPngDataUrl) {
-    try { doc.addImage(logoPngDataUrl, 'PNG', M, 6, 56, 8); } catch(e) {}
-  } else {
-    doc.setFillColor(255, 255, 255, 0.2);
-    doc.setDrawColor(255, 255, 255);
-    doc.setLineWidth(0.3);
-    doc.rect(M, 9, 35, 14);
-    doc.setFontSize(8);
-    doc.setTextColor(200, 200, 200);
-    doc.text('LOGO', M + 17.5, 17.5, { align: 'center' });
-  }
-
-  // Title
-  doc.setFontSize(16);
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Simulation de frais d\'entrée', W - M, 20, { align: 'right' });
-  doc.setFontSize(9);
+  doc.roundedRect(M, y, halfW, boxH, 3, 3, 'F');
+  doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(200, 200, 220);
-  doc.text(today, W - M, 28, { align: 'right' });
-
-  let y = 56;
-
-  // Product & amount block
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(26, 58, 92);
-  doc.text('Produit souscrit', M, y);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(50, 50, 50);
-  doc.text(product.name, M + 55, y);
-
-  y += 9;
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(26, 58, 92);
-  doc.text('Montant investi', M, y);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(50, 50, 50);
-  doc.text(new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(amount), M + 55, y);
-
-  // Result box
-  y += 14;
-  doc.setFillColor(245, 247, 250);
-  doc.roundedRect(M, y, W - 2 * M, 36, 3, 3, 'F');
-  doc.setDrawColor(26, 58, 92);
-  doc.setLineWidth(0.8);
-  doc.roundedRect(M, y, W - 2 * M, 36, 3, 3, 'D');
-
-  doc.setFontSize(9);
-  doc.setTextColor(100, 100, 120);
-  doc.setFont('helvetica', 'normal');
-  doc.text('TAUX DE FRAIS APPLIQUÉ', W / 2, y + 9, { align: 'center' });
-  doc.setFontSize(22);
+  doc.setTextColor(180, 200, 220);
+  doc.text('TAUX DE FRAIS APPLIQUÉ', M + halfW / 2, y + 9, { align: 'center' });
+  doc.setFontSize(24);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(200, 164, 74);
-  doc.text(fmtRate(rate), W / 2, y + 19, { align: 'center' });
-  doc.setFontSize(9);
-  doc.setTextColor(100, 100, 120);
+  doc.text(fmtRate(rate), M + halfW / 2, y + 24, { align: 'center' });
+
+  // Frais
+  const bx2 = M + halfW + 6;
+  doc.setFillColor(245, 247, 250);
+  doc.setDrawColor(220, 228, 238);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(bx2, y, halfW, boxH, 3, 3, 'FD');
+  doc.setFontSize(8);
   doc.setFont('helvetica', 'normal');
-  doc.text('FRAIS D\'ENTRÉE', W / 2, y + 27, { align: 'center' });
-  doc.setFontSize(13);
+  doc.setTextColor(100, 110, 130);
+  doc.text('FRAIS D\'ENTRÉE', bx2 + halfW / 2, y + 9, { align: 'center' });
+  doc.setFontSize(20);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(3, 95, 147);
+  doc.text(fmtEur(fees), bx2 + halfW / 2, y + 24, { align: 'center' });
+
+  y += boxH + 8;
+
+  // Montant net — ligne mise en valeur
+  doc.setFillColor(235, 245, 235);
+  doc.setDrawColor(100, 160, 100);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(M, y, W - 2 * M, 12, 2, 2, 'FD');
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(30, 100, 30);
+  doc.text(`Montant net investi après frais : ${fmtCur(net)}`, W / 2, y + 8, { align: 'center' });
+
+  y += 20;
+
+  // Barème
+  doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(26, 58, 92);
-  doc.text(fmtEur(fees), W / 2, y + 34, { align: 'center' });
-
-  y += 46;
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(80, 80, 80);
-  doc.text(`Montant net investi après frais : ${fmtEur(net)}`, W / 2, y, { align: 'center' });
-
-  // Schedule table
-  y += 14;
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(26, 58, 92);
-  doc.text('Barème de frais applicable', M, y);
+  doc.text('Barème de frais', M, y);
   y += 4;
 
   const sorted = [...schedule].sort((a, b) => a.min - b.min);
   const tableData = sorted.map((bp, i) => {
     const next = sorted[i + 1];
-    return [
-      fmt(bp.min) + ' €' + (next ? ' – ' + fmt(next.min - 1) + ' €' : ' et au-delà'),
-      next ? fmtRate(bp.rate) + ' → ' + fmtRate(next.rate) : fmtRate(bp.rate),
-      product.type === 'coefficient' ? `Barème commun × ${product.coeff?.toFixed(2)}` : 'Barème propre'
-    ];
+    const tranche = fmt(bp.min) + ' €' + (next ? ' – ' + fmt(next.min - 1) + ' €' : ' et au-delà');
+    const taux = next ? fmtRate(bp.rate) + ' → ' + fmtRate(next.rate) : fmtRate(bp.rate);
+    return [tranche, taux];
   });
 
   doc.autoTable({
     startY: y + 2,
-    head: [['Tranche', 'Taux (interpolation linéaire)', 'Type']],
+    head: [['Tranche d\'investissement', 'Taux de frais']],
     body: tableData,
     theme: 'grid',
     headStyles: { fillColor: [3, 95, 147], textColor: 255, fontStyle: 'bold', fontSize: 9 },
-    bodyStyles: { fontSize: 9, textColor: [50, 50, 50] },
+    bodyStyles: { fontSize: 9.5, textColor: [40, 40, 40] },
     alternateRowStyles: { fillColor: [248, 250, 252] },
-    columnStyles: { 0: { cellWidth: 70 }, 1: { cellWidth: 60 }, 2: { cellWidth: 50 } },
+    columnStyles: { 0: { cellWidth: 110 }, 1: { cellWidth: 64, halign: 'right' } },
     margin: { left: M, right: M },
   });
 
-  // Footer
-  const pageH = 297;
-  doc.setFontSize(8);
-  doc.setTextColor(150, 150, 150);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Document généré à titre indicatif — non contractuel', W / 2, pageH - 14, { align: 'center' });
-  doc.text(`Émis le ${today}`, W / 2, pageH - 9, { align: 'center' });
-  doc.setDrawColor(200, 164, 74);
-  doc.setLineWidth(1);
-  doc.line(M, pageH - 18, W - M, pageH - 18);
-
-  doc.save(`frais-entree-${product.name.replace(/\s+/g, '-').toLowerCase()}-${fmt(amount)}eur.pdf`);
+  pdfFooter(doc, today);
+  pdfSave(doc, `Frais-${product.name.replace(/\s+/g, '-')}-${fmt(amount)}EUR.pdf`);
 }
 
 // ==================== MULTI-SUPPORTS ====================
@@ -1272,8 +1330,8 @@ function exportMultiPDF() {
   if (!multiLines.length) return alert('Ajoutez au moins un support avant d\'exporter.');
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const today = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' });
-  const W = 210, M = 18;
+  const clientName = (document.getElementById('multi-client-name')?.value || '').trim();
+  const fmtCur = v => new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(v);
 
   const totalAmount = multiLines.reduce((s, l) => s + (l.amount || 0), 0);
   const totalFees = multiLines.reduce((s, l) => {
@@ -1284,55 +1342,49 @@ function exportMultiPDF() {
   const avgRate = totalAmount > 0 ? (totalFees / totalAmount * 100) : 0;
   const netTotal = totalAmount - totalFees;
 
-  // Header
-  doc.setFillColor(26, 58, 92);
-  doc.rect(0, 0, W, 42, 'F');
-  if (logoPngDataUrl) {
-    try { doc.addImage(logoPngDataUrl, 'PNG', M, 6, 56, 8); } catch(e) {}
-  } else {
-    doc.setDrawColor(255,255,255); doc.setLineWidth(0.3);
-    doc.rect(M, 9, 35, 14);
-    doc.setFontSize(8); doc.setTextColor(200,200,200);
-    doc.text('LOGO', M + 17.5, 17.5, { align: 'center' });
-  }
-  doc.setFontSize(16); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold');
-  doc.text('Simulation multi-supports', W - M, 20, { align: 'right' });
-  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(200,200,220);
-  doc.text(today, W - M, 28, { align: 'right' });
+  const { y: startY, W, M, today } = pdfHeader(doc, 'Simulation multi-supports', clientName);
+  let y = startY;
 
-  let y = 54;
-
-  // Summary boxes
-  const boxW = (W - 2*M - 8) / 3;
+  // 3 boxes de synthèse
+  const boxW = (W - 2 * M - 8) / 3;
   const boxes = [
-    { label: 'Total investi', value: fmtEur(totalAmount) },
+    { label: 'Total investi', value: fmtCur(totalAmount), highlight: false },
     { label: 'Taux moyen pondéré', value: fmtRate(avgRate), highlight: true },
-    { label: 'Total frais d\'entrée', value: fmtEur(totalFees) },
+    { label: 'Total frais d\'entrée', value: fmtCur(totalFees), highlight: false },
   ];
   boxes.forEach((b, i) => {
     const bx = M + i * (boxW + 4);
     if (b.highlight) {
-      doc.setFillColor(26,58,92); doc.roundedRect(bx, y, boxW, 26, 2, 2, 'F');
-      doc.setTextColor(200,164,74);
+      doc.setFillColor(26, 58, 92);
+      doc.roundedRect(bx, y, boxW, 28, 2, 2, 'F');
+      doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(180, 200, 220);
+      doc.text(b.label.toUpperCase(), bx + boxW / 2, y + 8, { align: 'center' });
+      doc.setFontSize(14); doc.setFont('helvetica', 'bold'); doc.setTextColor(200, 164, 74);
+      doc.text(b.value, bx + boxW / 2, y + 21, { align: 'center' });
     } else {
-      doc.setFillColor(245,247,250); doc.roundedRect(bx, y, boxW, 26, 2, 2, 'F');
-      doc.setDrawColor(220,225,234); doc.setLineWidth(0.3); doc.roundedRect(bx, y, boxW, 26, 2, 2, 'D');
-      doc.setTextColor(26,58,92);
+      doc.setFillColor(245, 247, 250);
+      doc.setDrawColor(220, 228, 238); doc.setLineWidth(0.3);
+      doc.roundedRect(bx, y, boxW, 28, 2, 2, 'FD');
+      doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 110, 130);
+      doc.text(b.label.toUpperCase(), bx + boxW / 2, y + 8, { align: 'center' });
+      doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(3, 95, 147);
+      doc.text(b.value, bx + boxW / 2, y + 21, { align: 'center' });
     }
-    doc.setFontSize(7); doc.setFont('helvetica','normal');
-    doc.setTextColor(b.highlight ? [200,200,220] : [100,110,130]);
-    doc.text(b.label.toUpperCase(), bx + boxW/2, y + 7, { align: 'center' });
-    doc.setFontSize(13); doc.setFont('helvetica','bold');
-    doc.setTextColor(b.highlight ? [200,164,74] : [3,95,147]);
-    doc.text(b.value, bx + boxW/2, y + 18, { align: 'center' });
   });
 
-  y += 34;
-  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,120);
-  doc.text(`Montant net total investi après frais : ${fmtEur(netTotal)}`, W/2, y, { align: 'center' });
+  y += 36;
 
-  y += 12;
-  doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(26,58,92);
+  // Net total
+  doc.setFillColor(235, 245, 235);
+  doc.setDrawColor(100, 160, 100); doc.setLineWidth(0.3);
+  doc.roundedRect(M, y, W - 2 * M, 12, 2, 2, 'FD');
+  doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 100, 30);
+  doc.text(`Montant net total investi après frais : ${fmtCur(netTotal)}`, W / 2, y + 8, { align: 'center' });
+
+  y += 20;
+
+  // Titre tableau
+  doc.setFontSize(10); doc.setFont('helvetica', 'bold'); doc.setTextColor(26, 58, 92);
   doc.text('Détail par support', M, y);
 
   const tableData = multiLines.map(line => {
@@ -1341,39 +1393,38 @@ function exportMultiPDF() {
     const rate = computeRate(line.amount, getEffectiveSchedule(p));
     const fees = line.amount * rate / 100;
     const pct = totalAmount > 0 ? (line.amount / totalAmount * 100).toFixed(1) + ' %' : '—';
-    return [p.name, fmtEur(line.amount), fmtRate(rate), fmtEur(fees), pct];
+    return [p.name, fmtCur(line.amount), fmtRate(rate), fmtCur(fees), pct];
   });
-
-  // Totals row
-  tableData.push(['TOTAL', fmtEur(totalAmount), fmtRate(avgRate) + ' (moy.)', fmtEur(totalFees), '100,0 %']);
+  tableData.push(['TOTAL', fmtCur(totalAmount), fmtRate(avgRate) + ' moy.', fmtCur(totalFees), '100,0 %']);
 
   doc.autoTable({
     startY: y + 4,
-    head: [['Produit', 'Montant investi', 'Taux appliqué', 'Frais d\'entrée', '% du total']],
+    head: [['Produit / Support', 'Montant investi', 'Taux appliqué', 'Frais d\'entrée', '% du total']],
     body: tableData,
     theme: 'grid',
-    headStyles: { fillColor: [3,95,147], textColor: 255, fontStyle: 'bold', fontSize: 9 },
-    bodyStyles: { fontSize: 9, textColor: [50,50,50] },
-    alternateRowStyles: { fillColor: [248,250,252] },
+    headStyles: { fillColor: [3, 95, 147], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+    bodyStyles: { fontSize: 9.5, textColor: [40, 40, 40] },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
     didParseCell: data => {
-      if (data.row.index === tableData.length - 1 && data.section === 'body') {
+      if (data.section === 'body' && data.row.index === tableData.length - 1) {
         data.cell.styles.fontStyle = 'bold';
-        data.cell.styles.fillColor = [240,244,250];
-        data.cell.styles.textColor = [3,95,147];
+        data.cell.styles.fillColor = [230, 238, 250];
+        data.cell.styles.textColor = [3, 95, 147];
       }
     },
-    columnStyles: { 0:{cellWidth:42}, 1:{cellWidth:42,halign:'right'}, 2:{cellWidth:36,halign:'right'}, 3:{cellWidth:40,halign:'right'}, 4:{cellWidth:24,halign:'right'} },
+    columnStyles: {
+      0: { cellWidth: 46 },
+      1: { cellWidth: 40, halign: 'right' },
+      2: { cellWidth: 32, halign: 'right' },
+      3: { cellWidth: 40, halign: 'right' },
+      4: { cellWidth: 16, halign: 'right' },
+    },
     margin: { left: M, right: M },
   });
 
-  const pageH = 297;
-  doc.setFontSize(8); doc.setTextColor(150,150,150); doc.setFont('helvetica','normal');
-  doc.text('Document généré à titre indicatif — non contractuel', W/2, pageH-14, { align: 'center' });
-  doc.text(`Émis le ${today}`, W/2, pageH-9, { align: 'center' });
-  doc.setDrawColor(200,164,74); doc.setLineWidth(1);
-  doc.line(M, pageH-18, W-M, pageH-18);
-
-  doc.save(`frais-multi-supports-${today.replace(/\s/g,'-')}.pdf`);
+  pdfFooter(doc, today);
+  const dateStr = new Date().toISOString().slice(0, 10);
+  pdfSave(doc, `Frais-Multi-Supports-${dateStr}.pdf`);
 }
 
 // ==================== LOGO ====================
@@ -1382,7 +1433,6 @@ function exportMultiPDF() {
 // ==================== PRE-RENDER LOGO FOR PDF ====================
 let logoPngDataUrl = null;
 function preRenderLogoForPdf() {
-  const domImg = document.getElementById('logo-img');
   function doRender(img) {
     try {
       const canvas = document.createElement('canvas');
@@ -1391,15 +1441,13 @@ function preRenderLogoForPdf() {
       logoPngDataUrl = canvas.toDataURL('image/png');
     } catch(e) { logoPngDataUrl = null; }
   }
+  const domImg = document.getElementById('logo-img');
   if (!domImg) return;
-  if (state.logo) {
-    const img = new Image();
-    img.onload = () => doRender(img);
-    img.src = state.logo;
-  } else if (domImg.complete && domImg.naturalWidth) {
+  if (domImg.complete && domImg.naturalWidth > 0) {
     doRender(domImg);
   } else {
     domImg.addEventListener('load', () => doRender(domImg), { once: true });
+    domImg.addEventListener('error', () => { logoPngDataUrl = null; }, { once: true });
   }
 }
 // ==================== INIT ====================
