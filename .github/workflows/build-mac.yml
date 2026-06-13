@@ -36,27 +36,46 @@ jobs:
           sips -z 512 512   assets/icon.png --out icon.iconset/icon_512x512.png
           iconutil -c icns icon.iconset -o assets/icon.icns
 
-      - name: Build Mac app (dossier)
+      - name: Build Mac app (sans DMG)
         run: npx electron-builder --mac dir
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: Signature ad-hoc (corrige l'erreur "endommagée")
+      - name: Signer correctement chaque binaire Electron
         run: |
-          APP=$(find dist/mac -name "*.app" | head -1)
-          codesign --deep --force --sign - "$APP"
-          echo "Signé : $APP"
+          APP=$(find dist -name "*.app" -maxdepth 3 | head -1)
+          echo "App trouvée : $APP"
+          ENTITLEMENTS="entitlements.plist"
 
-      - name: Créer le DMG depuis l'app signée
+          # 1. Signer les frameworks et dylibs (du plus profond au plus haut)
+          find "$APP/Contents/Frameworks" -name "*.dylib" -o -name "*.so" | while read f; do
+            codesign --force --sign - "$f" 2>/dev/null || true
+          done
+
+          find "$APP/Contents/Frameworks" -name "*.framework" | while read f; do
+            codesign --force --deep --sign - "$f" 2>/dev/null || true
+          done
+
+          find "$APP/Contents/Frameworks" -name "Electron Helper*" -name "*.app" | while read h; do
+            codesign --force --sign - --entitlements "$ENTITLEMENTS" "$h" 2>/dev/null || true
+          done
+
+          # 2. Signer le bundle principal
+          codesign --force --sign - --entitlements "$ENTITLEMENTS" "$APP"
+          echo "Signature terminée"
+          codesign --verify --verbose "$APP" || true
+
+      - name: Créer le DMG
         run: |
-          APP=$(find dist/mac -name "*.app" | head -1)
+          APP=$(find dist -name "*.app" -maxdepth 3 | head -1)
           hdiutil create \
             -volname "Calculateur de Frais" \
             -srcfolder "$APP" \
             -ov -format UDZO \
             dist/CalculateurFrais-Mac.dmg
+          echo "DMG créé"
 
-      - name: Upload DMG artifact
+      - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
           name: CalculateurFrais-Mac
